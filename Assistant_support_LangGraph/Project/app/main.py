@@ -234,48 +234,45 @@ async def transcribe_conversation_from_paths(paths: dict):
         raise HTTPException(status_code=500, detail=f"Errore: {str(e)}")
     
 
+
+    
 @api.post("/api/graph/run")
-async def run_complete_workflow(request: dict):
+async def run_dynamic_workflow(request: dict):
     """
-    Endpoint compatibile con GraphController C#
+    Endpoint universale per eseguire workflow dinamici.
     
-    Esempio request:
-    {
-        "input": "",
-        "state": {
-            "location": "conversations-audio",
-            "inbound": "xxx_inbound.mp3",
-            "outbound": "xxx_outbound.mp3",
-            "tenant_key": "COESO_INTERV",
-            "conversationId": "xxx",
-            "co_code": "ACME",
-            "orgn_code": "FLO",
-            "user_id": "luca.bianchi",
-            "caller_id": "+39055123456",
-            "scope": ["MAIL_RT", "MAIL_TOKEN_RT"]
-        }
-    }
+    Supporta:
+    - workflow: nome preset ("full", "quick", "analysis_only") o lista custom ["reconstruct", "email"]
+    - state: stato iniziale con tutti i dati necessari
     """
-    if not COMPLETE_GRAPH_AVAILABLE:
-        raise HTTPException(
-            status_code=501,
-            detail="Il workflow completo non è disponibile. Assicurati che tutti i moduli siano installati."
-        )
-    
     if not config:
         raise HTTPException(status_code=500, detail="Configurazione non inizializzata")
     
     try:
-        # Estrai stato dal request
+        # Estrai parametri dalla richiesta
         input_state = request.get("state", {})
+        workflow_spec = request.get("workflow", "full")  # Default: flusso completo
         
-        # Prepara stato iniziale completo
+        # Prepara i passi del workflow
+        from app.graph import prepare_workflow_steps
+        steps = prepare_workflow_steps(workflow_spec)
+        
+        if not steps:
+            raise HTTPException(
+                status_code=400, 
+                detail="Nessun passo valido nel workflow richiesto"
+            )
+        
+        logger.info(f"🚀 Avvio workflow con passi: {steps}")
+        
+        # Prepara stato iniziale
         initial_state: GraphState = {
+            # Campi base
             "messages": [],
             "audio_file_paths": [],
-            "transcript": "",
+            "transcript": input_state.get("transcript", ""),
             
-            # Campi dal request
+            # Identificazione
             "tenant_key": input_state.get("tenant_key"),
             "conversation_id": input_state.get("conversationId"),
             "co_code": input_state.get("co_code"),
@@ -283,11 +280,17 @@ async def run_complete_workflow(request: dict):
             "user_id": input_state.get("user_id"),
             "caller_id": input_state.get("caller_id"),
             "scope": input_state.get("scope", []),
+            
+            # File storage
             "location": input_state.get("location"),
             "inbound": input_state.get("inbound"),
             "outbound": input_state.get("outbound"),
             
-            # Passa la configurazione
+            # Pre-popolamento per entrare a metà flusso
+            "reconstruction": input_state.get("reconstruction"),
+            "cluster_analysis": input_state.get("cluster_analysis"),
+            
+            # Configurazione
             "config": {
                 "InternalStaticKey": config["InternalStaticKey"],
                 "RemoteApi": {
@@ -297,13 +300,16 @@ async def run_complete_workflow(request: dict):
                 }
             },
             
-            # Campi per risultati
-            "reconstruction": None,
+            # 🆕 Controllo del flusso
+            "steps": steps,
+            "current_step_index": 0,
+            "execution_trace": [],
+            "skip_remaining": False,
+            "error": None,
+            
+            # Risultati inizializzati
             "persistence_result": None,
             "email_result": None,
-            "cluster_analysis": None,
-            "interaction_analysis": None,
-            "patterns_insights": None,
             "suggestions": None,
             "action_plan": None,
             "tokens_used": 0,
@@ -312,11 +318,15 @@ async def run_complete_workflow(request: dict):
             "final_status": None
         }
         
-        # Esegui il workflow completo
-        final_state = await complete_graph.ainvoke(initial_state)
+        # Esegui il workflow
+        from app.graph import dynamic_graph
+        final_state = await dynamic_graph.ainvoke(initial_state)
         
-        # Costruisci risposta compatibile con GraphResult C#
+        # Costruisci risposta
         return {
+            "success": not bool(final_state.get("error")),
+            "workflow_executed": steps,
+            "execution_trace": final_state.get("execution_trace", []),
             "state": {
                 "conversation_id": final_state.get("conversation_id"),
                 "transcript": final_state.get("transcript", ""),
@@ -333,9 +343,37 @@ async def run_complete_workflow(request: dict):
                 "action_plan": final_state.get("action_plan", {}),
                 "final_status": final_state.get("final_status", "COMPLETED")
             },
-            "trace": []  # Puoi aggiungere logging dei nodi se necessario
+            "error": final_state.get("error")
         }
         
     except Exception as e:
-        logger.error(f"Errore nel workflow: {str(e)}")
+        logger.error(f"Errore nel workflow: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+# NUOVO endpoint per info sui workflow disponibili
+@api.get("/api/graph/workflows")
+async def get_available_workflows():
+    """
+    Restituisce informazioni sui workflow disponibili.
+    """
+    from app.graph import NODE_FUNCTIONS, PRESET_WORKFLOWS, DEFAULT_FLOW
+    
+    return {
+        "available_nodes": list(NODE_FUNCTIONS.keys()),
+        "preset_workflows": PRESET_WORKFLOWS,
+        "default_flow": DEFAULT_FLOW,
+        "usage_examples": {
+            "full_flow": {
+                "description": "Esegue il flusso completo",
+                "workflow": "full"
+            },
+            "custom_flow": {
+                "description": "Esegue solo alcuni nodi in ordine custom", 
+                "workflow": ["reconstruct", "analyze", "persist"]
+            },
+            "single_node": {
+                "description": "Esegue un singolo nodo",
+                "workflow": ["email"]
+            }
+        }
+    }
