@@ -99,120 +99,143 @@ def email_node(state: GraphState) -> dict:
     
     return {"email_result": "NOT_IMPLEMENTED"}
 
+
 def analysis_node(state: GraphState) -> dict:
-    """Nodo 4: Analisi AI tramite API HTTP"""
+    """Nodo 4: Analisi AI tramite API HTTP (modificato per compatibilità JSON)"""
     print("--- NODO 4: ANALISI AI ---")
-    
-    import io
-    import requests
-    
-    # Prepara il prompt per l'analisi
-    analysis_prompt = f"""
-    Analizza questa trascrizione nel contesto di supporto disabilità.
-    
-    TRASCRIZIONE: {state['transcript'][:5000]}  # Limita per token
-    
-    Genera JSON con:
-    {{
-        "clusters": {{
-            "comunicazione_funzionale": {{"score": 1-4, "evidenze": "..."}},
-            "autonomia_personale": {{"score": 1-4, "evidenze": "..."}}
-        }},
-        "interazione": {{
-            "qualita_comunicazione": "...",
-            "efficacia_strategie": "..."
-        }},
-        "patterns": {{
-            "correlazioni": [],
-            "segnali_deboli": []
-        }}
-    }}
-    
-    Rispondi SOLO con JSON valido.
-    """
-    
-    # Prepara la trascrizione come file in memoria
-    transcript_file = io.BytesIO(state['transcript'].encode('utf-8'))
-    
-    # Prepara i parametri multipart
-    files = [
-        ('fileToAnalyze', ('transcript.txt', transcript_file, 'text/plain'))
-    ]
-    
-    # Prepara i dati del form
-    form_data = []
-    form_data.append(('tenantKey', state.get('tenant_key', 'COESO_INTERV')))
-    form_data.append(('prompt', analysis_prompt))
-    form_data.append(('modelName', 'gemini-2.5-pro'))
-    
-    # Aggiungi i knowledge file paths
-    knowledge_paths = [
-        'gs://bucket_analyses/coeso-ora-docs/Strumenti e attività.pdf',
-        'gs://bucket_analyses/coeso-ora-docs/Documento di Pianificazione per ORA.pdf'
-    ]
-    
-    for path in knowledge_paths:
-        form_data.append(('knowledgeFilePaths', path))
-    
-    try:
-        # Fai la chiamata all'API
-        response = requests.post(
-            f"{API_URL}/api/GeminiTextGeneration/analyze-with-knowledge-base",
-            data=form_data,
-            files=files,
-            timeout=120
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            
-            # L'API restituisce un oggetto con campo 'analysis' che contiene una stringa JSON
-            if isinstance(result, dict) and "analysis" in result:
-                analysis_text = result.get('analysis', '{}')
-                analysis = json.loads(analysis_text)
-            else:
-                # Fallback per altri formati di risposta
-                analysis = result if isinstance(result, dict) else {}
-            
-            # Log dei token usati se disponibili
-            if result.get('usage'):
-                logger.info(f"Analisi completata. Tokens: {result['usage'].get('tokens', 0)}, "
-                          f"Costo: ${result['usage'].get('costUsd', 0.0)}")
-            
-            # Ritorna i risultati con i nomi corretti per il mapping
-            return {
-                "cluster_analysis": analysis.get("clusters", {}),
-                "interaction_analysis": analysis.get("interazione", {}),
-                "patterns_insights": analysis.get("patterns", {}),
-                "analysis_tokens_used": result.get('usage', {}).get('tokens', 0) if isinstance(result, dict) else 0,
-                "analysis_cost_usd": result.get('usage', {}).get('costUsd', 0.0) if isinstance(result, dict) else 0.0
+
+    # Il prompt rimane lo stesso, ma lo useremo per il payload JSON
+    analysis_prompt = """
+          
+          Sei un analista esperto in ambito educativo e terapeutico. Ti fornisco tre documenti con ruoli specifici:
+
+1.  **Documenti di Riferimento (Knowledge Base):**
+    * `Documento_di_Pianificazione_per_ORA.pdf`
+    * `Strumenti_e_attivita.pdf`
+    Questi due file costituiscono la tua unica fonte di conoscenza per i criteri di valutazione, le definizioni e gli strumenti da consigliare. Devi basare la tua analisi esclusivamente su quanto descritto in questi documenti.
+
+2.  **Documento da Analizzare:**
+    * `Trascrizione.txt`
+    Questo file contiene la trascrizione della sessione che devi analizzare.
+
+**Il tuo compito è il seguente:**
+Analizza il file `Trascrizione.txt`. Per ogni fase dell'analisi, devi applicare i concetti, le strategie e le scale di valutazione definite nei due documenti di riferimento. Puoi usare la tua conoscenza generale per arricchire il linguaggio e la struttura della risposta, ma ogni giudizio, valutazione e suggerimento deve essere direttamente collegato alle informazioni contenute nei file della knowledge base.
+
+Ora, procedi con l'analisi e genera un output in formato JSON strutturato come segue:
+
+          FASE 1: ANALISI PER CLUSTER DI OSSERVAZIONE
+         Per ogni cluster, valuta su scala 1-4 (critico, emergente, funzionale con supporto, autonomo):
+          1. COMUNICAZIONE FUNZIONALE
+            - Efficacia nell'esprimere bisogni e desideri
+            - Uso del linguaggio verbale, gesti o supporti alternativi
+          2. AUTONOMIA PERSONALE
+            - Capacità di gestire attività quotidiane (igiene, alimentazione, vestirsi)
+          3. GIOCO E PARTECIPAZIONE
+            - Modalità di interazione nelle attività ludiche
+            - Livello di iniziativa mostrato
+          4. SOCIALIZZAZIONE
+            - Ricerca del contatto con adulti o pari
+            - Risposta agli inviti all'interazione
+          5. GESTIONE DELLA DISREGOLAZIONE
+            - Identificazione dei trigger che scatenano crisi
+            - Tipo di risposta comportamentale (blocco, rabbia, pianto)
+          6. TOLLERANZA ALLA FRUSTRAZIONE
+            - Reazioni di fronte a 'no', errori o attese
+          7. PIANIFICAZIONE SPAZIO-TEMPORALE
+            - Orientamento nello spazio e nel tempo delle attività
+          8. REGOLAZIONE RISPETTO AL CONTESTO
+            - Rispetto delle regole
+            - Accettazione delle indicazioni dell'adulto
+          FASE 2: ANALISI DELL'INTERAZIONE OPERATORE-UTENTE
+         - Qualità della comunicazione dell'operatore
+         - Efficacia delle strategie utilizzate
+         - Stato emotivo dell'operatore
+          FASE 3: IDENTIFICAZIONE PATTERN E INSIGHT
+         - Correlazioni significative
+         - Segnali premonitori non colti
+         - Interessi emergenti utilizzabili come rinforzi
+          FASE 4: GENERAZIONE SUGGERIMENTI
+         - Report di sintesi con punti di forza e aree di miglioramento
+         - Strategie alternative basate sulle evidenze
+         - Strumenti e attività consigliati dal documento di riferimento
+         - Obiettivi SMART per la prossima sessione
+         - Checklist di dati da raccogliere
+          Restituisci l'analisi in formato JSON strutturato."""
+
+    # MODIFICA 1: Rimosso il codice per multipart/form-data.
+    # Non creiamo più file in memoria o form_data.
+
+    # MODIFICA 2: Creiamo il payload JSON che l'API C# si aspetta.
+    # Questo deve corrispondere esattamente alla struttura del comando cURL.
+    json_payload = {
+        "prompt": analysis_prompt,
+        "files": [
+            # I file di knowledge base
+            {
+              "location": "analisi",
+              "fileName": "Documento_di_Pianificazione_per_ORA.pdf"
+            },
+            {
+              "location": "analisi",
+              "fileName": "Strumenti_e_attivita.pdf"
+            },
+            # Aggiungiamo la trascrizione come un altro file da recuperare
+            {
+              "location": "analisi", # Assumendo che la trascrizione sia nello stesso percorso
+              "fileName": "Trascrizione.txt"
             }
-            
+        ],
+        "geminiModelName": "gemini-2.5-pro", # o state.get('modelName', 'gemini-2.5-pro')
+        "tenantKey": state.get('tenant_key', 'COESO_INTERV')
+    }
+
+    try:
+        # MODIFICA 3: Aggiornata la chiamata a requests.post()
+        # Usiamo il parametro 'json' per inviare application/json
+        # e aggiorniamo l'URL.
+        response = requests.post(
+            f"{API_URL}/api/GeminiTextGeneration/analyze-dynamic",
+            json=json_payload, # requests imposta automaticamente Content-Type: application/json
+            headers={'Accept': 'application/json'}, # È buona norma specificare cosa accettiamo
+            timeout=180 # Aumentato per analisi complesse
+        )
+
+        if response.status_code == 200:
+            # MODIFICA 4: Aggiornata la gestione della risposta
+            # L'API C# ora inoltra l'intera risposta di Gemini.
+            gemini_response = response.json()
+
+            # Estraiamo il testo JSON dall'interno della struttura di Gemini
+            analysis_text = gemini_response['candidates'][0]['content']['parts'][0]['text']
+            analysis = json.loads(analysis_text) # Deserializziamo la stringa JSON
+
+            # Estraiamo i dati di utilizzo dalla nuova struttura
+            usage = gemini_response.get('usageMetadata', {})
+            tokens_used = usage.get('totalTokenCount', 0)
+            # Nota: il costo non è fornito direttamente da Gemini, dovrai calcolarlo tu.
+            cost_usd = 0.0 # Placeholder per il costo
+
+            logger.info(f"Analisi completata. Tokens: {tokens_used}")
+
+            # Ritorna i risultati estratti dalla nuova struttura
+            return {
+                "cluster_analysis": analysis.get("fase1_analisi_cluster", {}),
+                "interaction_analysis": analysis.get("fase2_analisi_interazione", {}),
+                "patterns_insights": analysis.get("fase3_identificazione_pattern", {}),
+                # Aggiungiamo anche la fase 4 per usarla nel nodo successivo
+                "suggestions_payload": analysis.get("fase4_generazione_suggerimenti", {}),
+                "analysis_tokens_used": tokens_used,
+                "analysis_cost_usd": cost_usd
+            }
+
         else:
             logger.error(f"Errore API: Status {response.status_code}, Response: {response.text}")
-            return {
-                "cluster_analysis": {},
-                "interaction_analysis": {},
-                "patterns_insights": {},
-                "error": f"API error: {response.status_code}"
-            }
-            
-    except json.JSONDecodeError as e:
-        logger.error(f"Errore parsing JSON: {str(e)}")
-        return {
-            "cluster_analysis": {},
-            "interaction_analysis": {},
-            "patterns_insights": {},
-            "error": f"JSON parsing error: {str(e)}"
-        }
+            return {"error": f"API error: {response.status_code}", "details": response.text}
+
     except Exception as e:
-        logger.error(f"Errore analisi AI: {str(e)}")
-        return {
-            "cluster_analysis": {},
-            "interaction_analysis": {},
-            "patterns_insights": {},
-            "error": str(e)
-        }
+        logger.error(f"Errore durante la chiamata di analisi: {str(e)}")
+        return {"error": str(e)}
+    
     
 def suggestions_node(state: GraphState) -> dict:
     """Nodo 5: Genera suggerimenti basati sull'analisi"""
