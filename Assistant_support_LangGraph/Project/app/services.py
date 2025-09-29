@@ -15,13 +15,14 @@ class PersistenceClient:
         self.logger = logging.getLogger(__name__)
         self.base_url = api_client.base_url
     
-    def save_conversation(self, conversation_id: str, transcript: str) -> Optional[SaveReconstructionResponse]:
+    def save_conversation(self, conversation_id: str, transcript: str, type: str) -> Optional[SaveReconstructionResponse]:
         """Salva la conversazione nel database"""
         endpoint = f"{self.base_url}/api/internal/InternalRgConvTrs"
         
         payload = {
             "convName": conversation_id,
-            "transcribe": transcript
+            "transcribe": transcript,
+            "type":type
         }
         
         result = self.api_client.post_json(endpoint, payload)

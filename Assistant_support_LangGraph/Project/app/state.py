@@ -32,6 +32,7 @@ class GraphState(TypedDict):
     email_result: Optional[str]
     
     # Analisi AI
+    full_analysis: Optional[Dict[str, Any]] 
     cluster_analysis: Optional[Dict[str, Any]]
     interaction_analysis: Optional[Dict[str, Any]]
     patterns_insights: Optional[Dict[str, Any]]
