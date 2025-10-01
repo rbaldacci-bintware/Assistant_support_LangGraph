@@ -31,7 +31,7 @@ def conversation_reconstruction_node(state: GraphState) -> dict:
             location=state["location"],
             inbound_filename=state["inbound"],
             outbound_filename=state["outbound"],
-            tenant_key=state["tenant_key"]
+            projectName=state["projectName"]
         )
         
         return {
@@ -43,11 +43,11 @@ def conversation_reconstruction_node(state: GraphState) -> dict:
     
     # Flusso alternativo per test: usa percorsi di file locali
     elif len(state.get("audio_file_paths", [])) == 2:
-        tenant_key = state.get("tenant_key")
-        if not tenant_key:
-            raise ValueError("tenant_key non trovato")
+        projectName = state.get("projectName")
+        if not projectName:
+            raise ValueError("projectName non trovato")
         
-        params = {"tenant_key": tenant_key}
+        params = {"projectName": projectName}
         files = []
         for file_path in state["audio_file_paths"]:
             with open(file_path, "rb") as f:
@@ -91,10 +91,107 @@ def persistence_node(state: GraphState) -> dict:
     return {"persistence_result": f"{result.status}:{result.id}"}
 
 def email_node(state: GraphState) -> dict:
-    """Nodo 3: Invia email (stub)."""
+    """Nodo 3: Invia email tramite API esterna."""
     print("--- NODO 3: EMAIL ---")
-    logger.info("Email node chiamato ma non implementato.")
-    return {"email_result": "NOT_IMPLEMENTED"}
+    
+    # Controlla se l'invio email è richiesto
+    scope = state.get("scope", [])
+    if not scope:
+        logger.info("Email non richiesta (scope non contiene MAIL_RT)")
+        return {"email_result": "SKIPPED_NO_SCOPE"}
+    
+    # Ottieni la configurazione
+    config = state.get("config", {})
+    api_client = InternalApiClient(config)
+    api_key = api_client.api_key
+    
+    # URL dell'API Email
+    EMAIL_API_URL = os.getenv("EMAIL_API_URL", "http://localhost:5007")
+    
+    # Costruisci il payload nel formato richiesto
+    graph_payload = {
+        "graph": {
+            "edges": [],
+            "nodes": [
+                {
+                    "id": "email",
+                    "type": "tool",
+                    "plugin": "email",
+                    "function": "send_reconstruction_email",
+                    "outputKey": "emailResult",
+                    "parameters": {
+                        "scope": "{{scope}}",
+                        "co_code": "{{co_code}}",
+                        "user_id": "{{user_id}}",
+                        "caller_id": "{{caller_id}}",
+                        "orgn_code": "{{orgn_code}}",
+                        "conversationId": "{{conversationId}}",
+                        "tenant_key": "{{tenant_key}}",
+                        "id_assistito": "{{id_assistito}}",
+                        "transcript": "{{transcript}}"
+                    }
+                }
+            ],
+            "startNodeId": "email"
+        },
+        "input": "",
+        "state": {
+            "scope": state.get("scope", []),  # Default a MAIL_RT se non presente
+            "co_code": state.get("co_code", "none"),
+            "user_id": state.get("user_id", "none"),
+            "caller_id": state.get("caller_id", "none"),
+            "orgn_code": state.get("orgn_code", "none"),
+            "conversationId": state.get("conversation_id", "none"),  # Nota: conversion_id -> conversationId
+            "tenant_key": state.get("tenant_key", "none"),
+            "id_assistito": state.get("id_assistito", "none"),  # Se non presente sarà None
+            "transcript": state.get("transcript", "none")
+        }
+    }
+    
+    # Headers per la richiesta
+    headers = {
+        'accept': 'text/plain',
+        'X-Api-Key': api_key,  # Usa la stessa InternalStaticKey
+        'Content-Type': 'application/json'
+    }
+    
+    try:
+        logger.info(f"Invio email tramite API: {EMAIL_API_URL}/api/Graph/run")
+        
+        # Log del payload per debug (rimuovi i dati sensibili in produzione)
+        logger.debug(f"Email payload: conversationId={graph_payload['state'].get('conversationId')}, "
+                    f"user={graph_payload['state'].get('user_id')}")
+        
+        # Effettua la chiamata POST
+        response = requests.post(
+            f"{EMAIL_API_URL}/api/Graph/run",
+            json=graph_payload,
+            headers=headers,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            logger.info("✅ Email inviata con successo")
+            return {
+                "email_result": "SUCCESS",
+                "email_response": response.text
+            }
+        else:
+            logger.error(f"❌ Errore invio email: Status={response.status_code}, Body={response.text}")
+            return {
+                "email_result": f"ERROR_{response.status_code}",
+                "email_error": response.text
+            }
+            
+    except requests.exceptions.Timeout:
+        logger.error("⏱️ Timeout durante l'invio dell'email")
+        return {"email_result": "TIMEOUT"}
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ Errore di rete durante l'invio email: {str(e)}")
+        return {"email_result": "NETWORK_ERROR", "email_error": str(e)}
+    except Exception as e:
+        logger.error(f"❌ Errore generico durante l'invio email: {str(e)}")
+        return {"email_result": "ERROR", "email_error": str(e)}
 
 def _download_file(location: str, file_name: str, api_key: str) -> bytes:
     """Funzione helper per scaricare un file come array di byte."""
@@ -161,24 +258,60 @@ def analysis_node(state: GraphState) -> dict:
          - Checklist di dati da raccogliere
           Restituisci l'analisi in formato JSON strutturato."""
 
-    knowledge_base_files_to_download = [
-        {"location": "analisi", "fileName": "Documento_di_Pianificazione_per_ORA.pdf"},
-        {"location": "analisi", "fileName": "Strumenti_e_attivita.pdf"}
-    ]
+    # ✅ VALIDAZIONE: Verifica che i file di knowledge base siano specificati
+    knowledge_base_files_to_download = state.get("knowledge_base_files", [])
+    
+    if not knowledge_base_files_to_download:
+        error_msg = "❌ Nessun file di knowledge base specificato nello stato. L'analisi richiede almeno un file."
+        logger.error(error_msg)
+        return {
+            "error": "MISSING_KNOWLEDGE_BASE_FILES",
+            "details": error_msg,
+            "final_status": "ERROR"
+        }
+    
+    logger.info(f"Download di {len(knowledge_base_files_to_download)} file di knowledge base")
 
+    # Download dei file
     downloaded_files_content = []
     for file_info in knowledge_base_files_to_download:
-        file_bytes = _download_file(file_info["location"], file_info["fileName"], internal_api_key)
+        location = file_info.get("location")
+        file_name = file_info.get("fileName")
+        
+        if not location or not file_name:
+            error_msg = f"File info incompleto: {file_info}. Richiesti 'location' e 'fileName'"
+            logger.error(error_msg)
+            return {
+                "error": "INVALID_FILE_INFO",
+                "details": error_msg,
+                "final_status": "ERROR"
+            }
+            
+        logger.info(f"Download file: {file_name} da location: {location}")
+        file_bytes = _download_file(location, file_name, internal_api_key)
+        
         if not file_bytes:
-            return {"error": f"Impossibile scaricare il file di knowledge base: {file_info['fileName']}"}
-        downloaded_files_content.append((file_info["fileName"], file_bytes))
+            error_msg = f"Impossibile scaricare il file di knowledge base: {file_name} da {location}"
+            logger.error(error_msg)
+            return {
+                "error": "DOWNLOAD_FAILED",
+                "details": error_msg,
+                "failed_file": file_name,
+                "final_status": "ERROR"
+            }
+        
+        downloaded_files_content.append((file_name, file_bytes))
 
+    logger.info(f"✅ Scaricati con successo {len(downloaded_files_content)} file")
+
+    # Preparazione form data
     form_data = {
         'prompt': analysis_prompt,
-        'tenantKey': state.get('tenant_key', 'COESO_INTERV'),
+        'projectName': state.get('projectName', ''),
         'geminiModelName': 'gemini-2.5-pro'
     }
 
+    # Upload dei file
     files_to_upload = []
     for file_name, file_bytes in downloaded_files_content:
         files_to_upload.append(('ListaKnowledgeBase', (file_name, file_bytes, 'application/pdf')))
@@ -200,19 +333,27 @@ def analysis_node(state: GraphState) -> dict:
             usage = gemini_response.get('usageMetadata', {})
             tokens_used = usage.get('totalTokenCount', 0)
             
-            logger.info(f"Analisi completata con successo. Tokens usati: {tokens_used}")
+            logger.info(f"✅ Analisi completata con successo. Tokens usati: {tokens_used}")
             return {
-                "full_analysis": analysis, # Passiamo l'intera analisi ai nodi successivi
+                "full_analysis": analysis,
                 "analysis_tokens_used": tokens_used
             }
         else:
-            logger.error(f"Errore API analisi: Status {response.status_code}, Dettagli: {response.text}")
-            return {"error": f"API error: {response.status_code}", "details": response.text}
+            logger.error(f"❌ Errore API analisi: Status {response.status_code}, Dettagli: {response.text}")
+            return {
+                "error": f"API_ERROR_{response.status_code}",
+                "details": response.text,
+                "final_status": "ERROR"
+            }
 
     except Exception as e:
-        logger.error(f"Eccezione durante la chiamata di analisi: {str(e)}")
-        return {"error": str(e)}
-
+        logger.error(f"❌ Eccezione durante la chiamata di analisi: {str(e)}")
+        return {
+            "error": "EXCEPTION",
+            "details": str(e),
+            "final_status": "ERROR"
+        }
+    
 def suggestions_node(state: GraphState) -> dict:
     """Nodo 5: Estrae l'analisi e i suggerimenti dallo stato."""
     print("--- NODO 5: ESTRAZIONE DATI DI ANALISI ---")

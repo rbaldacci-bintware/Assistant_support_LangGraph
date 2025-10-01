@@ -12,6 +12,7 @@ class GraphState(TypedDict):
     audio_file_paths: List[str] 
     transcript: str
     tenant_key: str
+    projectName:Optional[str]
 
     # Campi per identificazione
     conversation_id: Optional[str]
@@ -56,3 +57,13 @@ class GraphState(TypedDict):
     skip_remaining: Optional[bool]  # Flag per interrompere l'esecuzione
     execution_trace: Optional[List[str]]  # Traccia dei nodi eseguiti
     error: Optional[str]  # Eventuale errore durante l'esecuzione
+
+    
+    id_assistito: Optional[str]
+    
+    # Campo per i risultati email
+    email_result: Optional[str]
+    email_response: Optional[str]
+    email_error: Optional[str]
+
+    knowledge_base_files: Optional[List[Dict[str, str]]] 

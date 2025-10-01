@@ -25,7 +25,8 @@ DEFAULT_FLOW = [
     "email",
     "analyze",
     "suggest",
-    "save_analysis"
+    "save_analysis",
+    "email"
 ]
 
 # Mapping nome nodo -> funzione
@@ -47,7 +48,8 @@ PRESET_WORKFLOWS = {
     "persist_only": ["persist"],
     "email_only": ["email"],
     "no_email": ["reconstruct", "persist", "analyze", "suggest", "save_analysis"],
-    "analysis_and_suggest": ["analyze", "suggest"]
+    "analysis_and_suggest": ["analyze", "suggest"],
+    "with_email": ["reconstruct", "persist", "email"]
 }
 
 # ===== FUNZIONI DI ROUTING =====
