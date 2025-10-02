@@ -280,12 +280,13 @@ async def run_dynamic_workflow(request: dict):
             "user_id": input_state.get("user_id"),
             "caller_id": input_state.get("caller_id"),
             "scope": input_state.get("scope", []),
-            
+            "id_assistito": input_state.get("id_assistito"),
             # File storage
             "location": input_state.get("location"),
             "inbound": input_state.get("inbound"),
             "outbound": input_state.get("outbound"),
-            
+            "project_name": input_state.get("project_name"),
+            "knowledge_base_files": input_state.get("knowledge_base_files"),  
             # Pre-popolamento per entrare a metà flusso
             "reconstruction": input_state.get("reconstruction"),
             "cluster_analysis": input_state.get("cluster_analysis"),

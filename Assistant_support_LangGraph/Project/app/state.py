@@ -12,7 +12,7 @@ class GraphState(TypedDict):
     audio_file_paths: List[str] 
     transcript: str
     tenant_key: str
-    projectName:Optional[str]
+    project_name:Optional[str]
 
     # Campi per identificazione
     conversation_id: Optional[str]

@@ -44,7 +44,7 @@ class AudioTools:
         location: str,
         inbound_filename: str,
         outbound_filename: str,
-        tenant_key: str
+        project_name: str
     ) -> ReconstructionResponse:
         """Scarica file e ricostruisce conversazione"""
         
@@ -66,7 +66,7 @@ class AudioTools:
         # Chiama API reconstruct
         google_api_url = self.api_client.google_api_url
         endpoint = f"{google_api_url}/api/Audio/reconstruct"
-        params = {"tenant_key": tenant_key}
+        params = {"project_name": project_name}
         
         response = requests.post(
             endpoint,

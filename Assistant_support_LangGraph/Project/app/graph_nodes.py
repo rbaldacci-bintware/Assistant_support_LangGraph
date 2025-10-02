@@ -31,7 +31,7 @@ def conversation_reconstruction_node(state: GraphState) -> dict:
             location=state["location"],
             inbound_filename=state["inbound"],
             outbound_filename=state["outbound"],
-            projectName=state["projectName"]
+            project_name=state["project_name"]
         )
         
         return {
@@ -43,11 +43,11 @@ def conversation_reconstruction_node(state: GraphState) -> dict:
     
     # Flusso alternativo per test: usa percorsi di file locali
     elif len(state.get("audio_file_paths", [])) == 2:
-        projectName = state.get("projectName")
-        if not projectName:
-            raise ValueError("projectName non trovato")
+        project_name = state.get("project_name")
+        if not project_name:
+            raise ValueError("project_name non trovato")
         
-        params = {"projectName": projectName}
+        params = {"project_name": project_name}
         files = []
         for file_path in state["audio_file_paths"]:
             with open(file_path, "rb") as f:
@@ -307,7 +307,7 @@ def analysis_node(state: GraphState) -> dict:
     # Preparazione form data
     form_data = {
         'prompt': analysis_prompt,
-        'projectName': state.get('projectName', ''),
+        'projectName': state["project_name"],
         'geminiModelName': 'gemini-2.5-pro'
     }
 
