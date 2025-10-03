@@ -32,6 +32,7 @@ services:
       # URL delle API - usa localhost perché siamo sulla stessa VM
       - GOOGLE_API_URL=http://localhost:5020
       - FileApiBaseUrl=http://localhost:5019
+      - EMAIL_API_URL=http://localhost:5007
       
       # Aggiungi altre variabili se necessario
       # - LOG_LEVEL=info

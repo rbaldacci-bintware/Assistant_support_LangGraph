@@ -31,19 +31,19 @@ class Configuration:
             raise InvalidOperationException("Il file di configurazione ambiente non è corretto.")
         
         file_path = os.path.join(directory, filename)
-        print(f"[Program] Percorso file .env criptato: {file_path}")
+        #print(f"[Program] Percorso file .env criptato: {file_path}")
         
         # Ottieni chiave di cifratura - È GIÀ IN BASE64!
         encryption_key = os.environ.get('CHIAVE_CIFRATURA')
         if not encryption_key:
             raise InvalidOperationException("CHIAVE_CIFRATURA environment variable is not set.")
         
-        print(f"[KEY] CHIAVE_CIFRATURA: {len(encryption_key)} caratteri")
+        #print(f"[KEY] CHIAVE_CIFRATURA: {len(encryption_key)} caratteri")
         
         # La chiave È GIÀ Base64 - usala direttamente
         if len(encryption_key) == 32:
             key_base64 = encryption_key  # USA DIRETTAMENTE, NON CONVERTIRE!
-            print(f"[KEY] Usando chiave Base64 direttamente")
+            #print(f"[KEY] Usando chiave Base64 direttamente")
         else:
             raise InvalidOperationException(f"La chiave deve essere di 32 caratteri, trovati: {len(encryption_key)}")
         
@@ -83,7 +83,7 @@ class Configuration:
                             variables[key] = decrypted_value
                             
                             if key == "InternalStaticKey":
-                                print(f"[SUCCESS] InternalStaticKey: {decrypted_value[:30]}...")
+                                print(f"[SUCCESS] InternalStaticKey: ")
                         except Exception as e:
                             print(f"[ERROR] Errore decrittando {key}: {str(e)}")
                             continue

@@ -128,7 +128,8 @@ def email_node(state: GraphState) -> dict:
                         "conversationId": "{{conversationId}}",
                         "tenant_key": "{{tenant_key}}",
                         "id_assistito": "{{id_assistito}}",
-                        "transcript": "{{transcript}}"
+                        "transcript": "{{transcript}}",
+                        "structured_analysis":{{"structured_analysis"}}
                     }
                 }
             ],
@@ -144,7 +145,8 @@ def email_node(state: GraphState) -> dict:
             "conversationId": state.get("conversation_id", "none"),  # Nota: conversion_id -> conversationId
             "tenant_key": state.get("tenant_key", "none"),
             "id_assistito": state.get("id_assistito", "none"),  # Se non presente sarà None
-            "transcript": state.get("transcript", "none")
+            "transcript": state.get("transcript", "none"),
+            "structured_analysis":state.get("full_analysis", {})
         }
     }
     
@@ -217,47 +219,243 @@ def analysis_node(state: GraphState) -> dict:
     config = state.get("config", {})
     api_client = InternalApiClient(config)
     internal_api_key = api_client.api_key
+    analysis_prompt = """Hai ricevuto i seguenti file:
 
-    analysis_prompt = """Analizza la trascrizione della conversazione educativa/terapeutica e genera un'analisi strutturata seguendo questi punti:
-          FASE 1: ANALISI PER CLUSTER DI OSSERVAZIONE
-         Per ogni cluster, valuta su scala 1-4 (critico, emergente, funzionale con supporto, autonomo):
-          1. COMUNICAZIONE FUNZIONALE
-            - Efficacia nell'esprimere bisogni e desideri
-            - Uso del linguaggio verbale, gesti o supporti alternativi
-          2. AUTONOMIA PERSONALE
-            - Capacità di gestire attività quotidiane (igiene, alimentazione, vestirsi)
-          3. GIOCO E PARTECIPAZIONE
-            - Modalità di interazione nelle attività ludiche
-            - Livello di iniziativa mostrato
-          4. SOCIALIZZAZIONE
-            - Ricerca del contatto con adulti o pari
-            - Risposta agli inviti all'interazione
-          5. GESTIONE DELLA DISREGOLAZIONE
-            - Identificazione dei trigger che scatenano crisi
-            - Tipo di risposta comportamentale (blocco, rabbia, pianto)
-          6. TOLLERANZA ALLA FRUSTRAZIONE
-            - Reazioni di fronte a 'no', errori o attese
-          7. PIANIFICAZIONE SPAZIO-TEMPORALE
-            - Orientamento nello spazio e nel tempo delle attività
-          8. REGOLAZIONE RISPETTO AL CONTESTO
-            - Rispetto delle regole
-            - Accettazione delle indicazioni dell'adulto
-          FASE 2: ANALISI DELL'INTERAZIONE OPERATORE-UTENTE
-         - Qualità della comunicazione dell'operatore
-         - Efficacia delle strategie utilizzate
-         - Stato emotivo dell'operatore
-          FASE 3: IDENTIFICAZIONE PATTERN E INSIGHT
-         - Correlazioni significative
-         - Segnali premonitori non colti
-         - Interessi emergenti utilizzabili come rinforzi
-          FASE 4: GENERAZIONE SUGGERIMENTI
-         - Report di sintesi con punti di forza e aree di miglioramento
-         - Strategie alternative basate sulle evidenze
-         - Strumenti e attività consigliati dal documento di riferimento
-         - Obiettivi SMART per la prossima sessione
-         - Checklist di dati da raccogliere
-          Restituisci l'analisi in formato JSON strutturato."""
+**FILE DA ANALIZZARE:**
+- `trascrizione.txt` - Contiene la trascrizione completa della conversazione educativa/terapeutica che devi analizzare
 
+**FILE DI RIFERIMENTO (Knowledge Base):**
+- Uno o più file PDF contenenti linee guida, metodologie, strumenti e best practices da utilizzare come base di conoscenza per condurre l'analisi
+
+---
+
+**COME UTILIZZARE I FILE DI RIFERIMENTO:**
+
+1. **File "Cluster di osservazione" (primo PDF):**
+   - Per OGNI cluster che valuti, consulta la sezione corrispondente nel PDF
+   - Identifica quali "descrittori" (punto b.) sono presenti nella trascrizione
+   - Esempio: Per "Comunicazione funzionale", cerca evidenze di: "comprensione emozioni", "sviluppo linguaggio", "fluidità comunicazione", "modalità comunicative"
+   - Se trovi questi descrittori → cita quali hai osservato
+   - Se NON trovi descrittori → livello = null
+
+2. **File "Strumenti e attività per tipologie di disabilità" (secondo PDF):**
+   - Usa questo per la FASE 4 (suggerimenti)
+   - Quando proponi uno strumento, DEVI:
+     a) Identificare quale sezione del PDF si applica
+     b) Citare strumenti SPECIFICI nominati nel documento (es. "PECS", "Timer visivo", "GECO")
+     c) Spiegare PERCHÉ quello strumento è appropriato
+   - NON inventare strumenti: usa SOLO quelli descritti nel PDF
+   - Formato citazione: "Timer visivo per gestione transizioni (fonte: Strumenti CAA, sezione 1 PDF)"
+
+3. **Collegamento cluster → strumenti:**
+   - Se rilevi criticità in un cluster → cerca nel PDF strumenti specifici
+   - Esempio: Deficit pianificazione temporale → "schedule visivo" (sezione PECS)
+**REGOLA PER MANCANZA DI EVIDENZE:**
+
+Se un cluster NON ha evidenze nella trascrizione, usa ESATTAMENTE questa struttura:
+{
+  "livello": null,
+  "evidenze": ["Nessuna evidenza diretta in questa sessione"],
+  "descrittori_osservati": [],
+  "note": "Non valutabile sulla base della trascrizione fornita. Raccomandare osservazione specifica su questo aspetto nelle prossime sessioni."
+}
+
+---
+
+    **IL TUO COMPITO:**
+    Analizza la trascrizione della conversazione (file trascrizione.txt) utilizzando le linee guida e le metodologie descritte nei file PDF di riferimento. Genera un'analisi strutturata seguendo questi punti:
+
+    ---
+
+    **FASE 1: ANALISI PER CLUSTER DI OSSERVAZIONE**
+
+    Basandoti sulla trascrizione, valuta ogni cluster su scala 1-4:
+    - 1 = Critico (necessita intervento immediato)
+    - 2 = Emergente (competenza in sviluppo)
+    - 3 = Funzionale con supporto (autonomo con guida)
+    - 4 = Autonomo (competenza consolidata)
+
+    Per ciascun cluster, fornisci:
+    - **Livello**: numero da 1 a 4
+    - **Evidenze**: citazioni specifiche dalla trascrizione che supportano la valutazione
+    - **Note**: osservazioni qualitative
+
+    **CLUSTER DA VALUTARE:**
+
+    1. **COMUNICAZIONE FUNZIONALE**
+    - Efficacia nell'esprimere bisogni e desideri
+    - Uso del linguaggio verbale, gesti o supporti alternativi
+    - Comprensione delle richieste
+
+    2. **AUTONOMIA PERSONALE**
+    - Capacità di gestire attività quotidiane (igiene, alimentazione, vestirsi)
+    - Iniziativa nelle routine
+
+    3. **GIOCO E PARTECIPAZIONE**
+    - Modalità di interazione nelle attività ludiche
+    - Livello di iniziativa e creatività mostrata
+    - Attenzione e persistenza
+
+    4. **SOCIALIZZAZIONE**
+    - Ricerca del contatto con adulti o pari
+    - Risposta agli inviti all'interazione
+    - Condivisione e cooperazione
+
+    5. **GESTIONE DELLA DISREGOLAZIONE**
+    - Identificazione dei trigger che scatenano crisi
+    - Tipo di risposta comportamentale (blocco, rabbia, pianto)
+    - Strategie di autoregolazione utilizzate
+
+    6. **TOLLERANZA ALLA FRUSTRAZIONE**
+    - Reazioni di fronte a 'no', errori o attese
+    - Capacità di persistere nelle difficoltà
+    - Richiesta di aiuto quando necessario
+
+    7. **PIANIFICAZIONE SPAZIO-TEMPORALE**
+    - Orientamento nello spazio e nel tempo delle attività
+    - Comprensione di sequenze e routine
+    - Anticipazione degli eventi
+
+    8. **REGOLAZIONE RISPETTO AL CONTESTO**
+    - Rispetto delle regole ambientali
+    - Accettazione delle indicazioni dell'adulto
+    - Adattamento a cambiamenti
+
+    ---
+
+    **FASE 2: ANALISI DELL'INTERAZIONE OPERATORE-UTENTE**
+
+    Valuta come l'operatore/educatore ha gestito l'interazione:
+    - **Qualità della comunicazione**: chiarezza, tono, linguaggio utilizzato
+    - **Efficacia delle strategie**: tecniche educative applicate e loro risultato
+    - **Stato emotivo dell'operatore**: segnali di stress, frustrazione o serenità
+
+    ---
+
+    **FASE 3: IDENTIFICAZIONE PATTERN E INSIGHT**
+
+    Identifica:
+    - **Correlazioni significative**: relazioni causa-effetto tra comportamenti
+    - **Segnali premonitori non colti**: warning signs che avrebbero potuto prevenire crisi
+    - **Interessi emergenti**: temi/attività che hanno catturato l'attenzione e possono essere usati come rinforzi positivi
+
+    ---
+
+    **FASE 4: GENERAZIONE SUGGERIMENTI**
+
+    Basandoti sulle metodologie descritte nei file PDF di riferimento, fornisci:
+    - **Report di sintesi**: punti di forza e aree di miglioramento
+    - **Strategie alternative**: tecniche educative specifiche raccomandate dai documenti
+    - **Strumenti e attività consigliati**: risorse concrete menzionate nei PDF di riferimento
+    - **Obiettivi SMART**: obiettivi Specifici, Misurabili, Achievable, Rilevanti, Temporizzati per la prossima sessione
+    - **Checklist di dati**: quali informazioni raccogliere nei prossimi incontri
+
+    ---
+
+    **FORMATO OUTPUT:**
+
+    Restituisci l'analisi ESATTAMENTE in questo formato JSON (usa snake_case per le chiavi):
+    ```json
+    {
+    "fase1_analisi_cluster": {
+        "comunicazione_funzionale": {
+        "livello": 2,
+        "evidenze": ["citazione dalla trascrizione 1", "citazione 2"],
+        "note": "descrizione qualitativa"
+        },
+        "autonomia_personale": {
+        "livello": 3,
+        "evidenze": ["..."],
+        "note": "..."
+        },
+        "gioco_e_partecipazione": {
+        "livello": 2,
+        "evidenze": ["..."],
+        "note": "..."
+        },
+        "socializzazione": {
+        "livello": 3,
+        "evidenze": ["..."],
+        "note": "..."
+        },
+        "gestione_disregolazione": {
+        "livello": 1,
+        "evidenze": ["..."],
+        "note": "..."
+        },
+        "tolleranza_frustrazione": {
+        "livello": 2,
+        "evidenze": ["..."],
+        "note": "..."
+        },
+        "pianificazione_spazio_temporale": {
+        "livello": 2,
+        "evidenze": ["..."],
+        "note": "..."
+        },
+        "regolazione_contesto": {
+        "livello": 2,
+        "evidenze": ["..."],
+        "note": "..."
+        }
+    },
+    "fase2_analisi_interazione": {
+        "qualita_comunicazione": "Descrizione dettagliata con esempi dalla trascrizione",
+        "efficacia_strategie": "Valutazione delle tecniche utilizzate",
+        "stato_emotivo": "Analisi dello stato emotivo osservato"
+    },
+    "fase3_identificazione_pattern": {
+        "correlazioni": [
+        "Pattern 1: descrizione",
+        "Pattern 2: descrizione"
+        ],
+        "segnali_premonitori": [
+        "Segnale 1 non colto: descrizione",
+        "Segnale 2 non colto: descrizione"
+        ],
+        "interessi_emergenti": [
+        "Interesse 1: come usarlo come rinforzo",
+        "Interesse 2: come usarlo come rinforzo"
+        ]
+    },
+    "fase4_generazione_suggerimenti": {
+        "report_sintesi": {
+        "punti_forza": [
+            "Punto di forza 1 con evidenza",
+            "Punto di forza 2 con evidenza"
+        ],
+        "aree_miglioramento": [
+            "Area 1: descrizione e suggerimenti",
+            "Area 2: descrizione e suggerimenti"
+        ]
+        },
+        "strategie_alternative": [
+        "Strategia 1 tratta dai documenti PDF di riferimento",
+        "Strategia 2 tratta dai documenti PDF di riferimento"
+        ],
+        "strumenti_consigliati": [
+        "Strumento 1: descrizione e fonte dal PDF",
+        "Strumento 2: descrizione e fonte dal PDF"
+        ],
+        "obiettivi_smart": [
+        {
+            "obiettivo": "Descrizione obiettivo",
+            "specifico": "...",
+            "misurabile": "...",
+            "achievable": "...",
+            "rilevante": "...",
+            "temporizzato": "..."
+        }
+        ],
+        "checklist_dati": [
+        "Dato 1 da raccogliere",
+        "Dato 2 da raccogliere"
+        ]
+    }
+    }"""
+
+    
+  
     # ✅ VALIDAZIONE: Verifica che i file di knowledge base siano specificati
     knowledge_base_files_to_download = state.get("knowledge_base_files", [])
     

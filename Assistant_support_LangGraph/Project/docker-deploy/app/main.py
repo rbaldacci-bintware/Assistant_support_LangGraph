@@ -1,4 +1,5 @@
 # main.py
+import logging
 import os
 import tempfile
 import requests
@@ -12,7 +13,18 @@ from pydantic import BaseModel
 from .graph import conversation_graph
 from .state import GraphState
 from .configuration import initialize_configuration, InvalidOperationException
-from .graph import conversation_graph, complete_graph
+
+try:
+    from .graph import complete_graph
+    COMPLETE_GRAPH_AVAILABLE = complete_graph is not None
+except ImportError:
+    COMPLETE_GRAPH_AVAILABLE = False
+    complete_graph = None
+    print("⚠️ Grafo completo non disponibile")
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Inizializza configurazione
 config = None
@@ -111,7 +123,7 @@ async def transcribe_conversation(request: ConversationRequest):
     # Ottieni API key dalla configurazione
     try:
         api_key = config["InternalStaticKey"]
-        
+       
         # TEMPORANEO: Usa la chiave corretta per testare il sistema
         if len(api_key) > 50:
             print("[WARNING] La chiave API sembra essere ancora criptata!")
@@ -223,3 +235,146 @@ async def transcribe_conversation_from_paths(paths: dict):
     
 
 
+    
+@api.post("/api/graph/run")
+async def run_dynamic_workflow(request: dict):
+    """
+    Endpoint universale per eseguire workflow dinamici.
+    
+    Supporta:
+    - workflow: nome preset ("full", "quick", "analysis_only") o lista custom ["reconstruct", "email"]
+    - state: stato iniziale con tutti i dati necessari
+    """
+    if not config:
+        raise HTTPException(status_code=500, detail="Configurazione non inizializzata")
+    
+    try:
+        # Estrai parametri dalla richiesta
+        input_state = request.get("state", {})
+        workflow_spec = request.get("workflow", "full")  # Default: flusso completo
+        
+        # Prepara i passi del workflow
+        from app.graph import prepare_workflow_steps
+        steps = prepare_workflow_steps(workflow_spec)
+        
+        if not steps:
+            raise HTTPException(
+                status_code=400, 
+                detail="Nessun passo valido nel workflow richiesto"
+            )
+        
+        logger.info(f"🚀 Avvio workflow con passi: {steps}")
+        
+        # Prepara stato iniziale
+        initial_state: GraphState = {
+            # Campi base
+            "messages": [],
+            "audio_file_paths": [],
+            "transcript": input_state.get("transcript", ""),
+            
+            # Identificazione
+            "tenant_key": input_state.get("tenant_key"),
+            "conversation_id": input_state.get("conversationId"),
+            "co_code": input_state.get("co_code"),
+            "orgn_code": input_state.get("orgn_code"),
+            "user_id": input_state.get("user_id"),
+            "caller_id": input_state.get("caller_id"),
+            "scope": input_state.get("scope", []),
+            "id_assistito": input_state.get("id_assistito"),
+            # File storage
+            "location": input_state.get("location"),
+            "inbound": input_state.get("inbound"),
+            "outbound": input_state.get("outbound"),
+            "project_name": input_state.get("project_name"),
+            "knowledge_base_files": input_state.get("knowledge_base_files"),  
+            # Pre-popolamento per entrare a metà flusso
+            "reconstruction": input_state.get("reconstruction"),
+            "cluster_analysis": input_state.get("cluster_analysis"),
+            
+            # Configurazione
+            "config": {
+                "InternalStaticKey": config["InternalStaticKey"],
+                "RemoteApi": {
+                    "BaseUrl": config.get("RemoteApi.BaseUrl", "http://localhost:5010"),
+                    "BaseUrlGoogleApi": config.get("RemoteApi.BaseUrlGoogleApi", "http://localhost:5020"),
+                    "BaseUrlFileService": config.get("FileApiBaseUrl", "http://localhost:5019")
+                }
+            },
+            
+            # 🆕 Controllo del flusso
+            "steps": steps,
+            "current_step_index": 0,
+            "execution_trace": [],
+            "skip_remaining": False,
+            "error": None,
+            
+            # Risultati inizializzati
+            "persistence_result": None,
+            "email_result": None,
+            "suggestions": None,
+            "action_plan": None,
+            "tokens_used": 0,
+            "cost_usd": 0.0,
+            "analysis_saved": False,
+            "final_status": None
+        }
+        
+        # Esegui il workflow
+        from app.graph import dynamic_graph
+        final_state = await dynamic_graph.ainvoke(initial_state)
+        
+        # Costruisci risposta
+        return {
+            "success": not bool(final_state.get("error")),
+            "workflow_executed": steps,
+            "execution_trace": final_state.get("execution_trace", []),
+            "state": {
+                "conversation_id": final_state.get("conversation_id"),
+                "transcript": final_state.get("transcript", ""),
+                "persistence_result": final_state.get("persistence_result"),
+                "email_result": final_state.get("email_result"),
+                "tokens_used": final_state.get("tokens_used", 0),
+                "cost_usd": final_state.get("cost_usd", 0.0),
+                "analysis": {
+                    "clusters": final_state.get("cluster_analysis", {}),
+                    "interaction": final_state.get("interaction_analysis", {}),
+                    "patterns": final_state.get("patterns_insights", {})
+                },
+                "suggestions": final_state.get("suggestions", {}),
+                "action_plan": final_state.get("action_plan", {}),
+                "final_status": final_state.get("final_status", "COMPLETED")
+            },
+            "error": final_state.get("error")
+        }
+        
+    except Exception as e:
+        logger.error(f"Errore nel workflow: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+# NUOVO endpoint per info sui workflow disponibili
+@api.get("/api/graph/workflows")
+async def get_available_workflows():
+    """
+    Restituisce informazioni sui workflow disponibili.
+    """
+    from app.graph import NODE_FUNCTIONS, PRESET_WORKFLOWS, DEFAULT_FLOW
+    
+    return {
+        "available_nodes": list(NODE_FUNCTIONS.keys()),
+        "preset_workflows": PRESET_WORKFLOWS,
+        "default_flow": DEFAULT_FLOW,
+        "usage_examples": {
+            "full_flow": {
+                "description": "Esegue il flusso completo",
+                "workflow": "full"
+            },
+            "custom_flow": {
+                "description": "Esegue solo alcuni nodi in ordine custom", 
+                "workflow": ["reconstruct", "analyze", "persist"]
+            },
+            "single_node": {
+                "description": "Esegue un singolo nodo",
+                "workflow": ["email"]
+            }
+        }
+    }

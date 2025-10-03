@@ -33,10 +33,10 @@ DEFAULT_FLOW = [
 NODE_FUNCTIONS = {
     "reconstruct": conversation_reconstruction_node,
     "persist": persistence_node,
-    "email": email_node,
     "analyze": analysis_node,
     "suggest": suggestions_node,
-    "save_analysis": save_analysis_node
+    "save_analysis": save_analysis_node,
+    "email": email_node
 }
 
 # Flussi predefiniti comuni
