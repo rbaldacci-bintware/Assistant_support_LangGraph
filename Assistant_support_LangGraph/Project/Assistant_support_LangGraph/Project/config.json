@@ -1,0 +1,10 @@
+{
+  "EnvFileSettings": {
+    "FileName": "172_16_10_52vsCLK793.env",
+    "Directory": "C:\\Sviluppo\\FileConfigGenerati"
+  },
+  "RemoteApi.BaseUrl": "http://localhost:5010",
+  "RemoteApi.BaseUrlGoogleApi": "http://localhost:5020",
+  "FileApiBaseUrl": "http://localhost:5019",
+  "EmailApiBaseUrl": "http://localhost:5007"
+}

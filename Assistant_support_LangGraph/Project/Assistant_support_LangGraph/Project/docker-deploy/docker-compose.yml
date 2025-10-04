@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  langgraph-api:
+    # Nome dell'immagine (cambierai dopo il build)
+    image: langgraph-api:latest
+    
+    # Nome del container per riferimenti facili
+    container_name: langgraph-api
+    
+    # Riavvia sempre se crasha
+    restart: always
+    
+    # Porta mapping - 8000 del container su 8000 dell'host
+    ports:
+      - "8000:8000"
+    
+    # Network mode - per comunicare con API C# sulla VM
+    # host permette di usare localhost per raggiungere le API C#
+    # Se non funziona, commenta questa riga e usa extra_hosts sotto
+    network_mode: "host"
+    
+    # Alternative a network_mode: host (decommenta se necessario)
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+    
+    # Variabili d'ambiente
+    environment:
+      # CHIAVE CRITICA - sostituisci con la tua chiave reale
+      - CHIAVE_CIFRATURA=${CHIAVE_CIFRATURA}
+      
+      # URL delle API - usa localhost perché siamo sulla stessa VM
+      - GOOGLE_API_URL=http://localhost:5020
+      - FileApiBaseUrl=http://localhost:5019
+      - EMAIL_API_URL=http://localhost:5007
+      
+      # Aggiungi altre variabili se necessario
+      # - LOG_LEVEL=info
+    
+    # Volumi - monta file e directory dall'host
+    volumes:
+      # Monta la directory con il file .env criptato
+      # Modifica il path source con quello reale sulla tua VM
+      - /var/www/webapi/langgraph-api/config:/var/www/webapi/langgraph-api/config:ro
+      
+      # Directory per file audio temporanei
+      - /var/www/webapi/langgraph-api/temp:/tmp/audio
+      
+      # Directory per logs persistenti (opzionale)
+      - /var/www/webapi/langgraph-api/logs:/app/logs
+      
+      # Se vuoi modificare config.json senza rebuild
+      # - ./config.json:/app/config.json:ro
+    
+    # Health check per monitorare se l'API risponde
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Limiti di risorse (opzionale, decommenta se vuoi limitare)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 2G
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 512M
+
+# Se non usi network_mode: host, puoi definire una network custom
+# networks:
+#   app-network:
+#     driver: bridge
